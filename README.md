@@ -10,7 +10,7 @@ Given a graph *G* and a parameter τ ∈ (0, 1), a node set *H* is a **flexi-cli
 connected and every node of *H* has at least ⌊|*H*|^τ⌋ neighbours in *H*. The binary `flexi`
 computes a maximum flexi-clique with:
 
-| `algo` | Algorithm | Paper |
+| Algorithm | Description | Paper |
 |---|---|---|
 | `eba` | **EBA** (Exact Branch-and-bound Algorithm): exact search with connectivity-preserving branching (CP-Branching), Rules 1–3, and the margin pivot, starting from the FPA solution | Section V, Algorithm 2 |
 | `fpa` | **FPA** (Flexi-Prune Algorithm): scalable heuristic — global peeling, augmentation, and slack-aware peeling | Section IV, Algorithm 1 |
