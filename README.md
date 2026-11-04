@@ -100,4 +100,3 @@ ground-truth communities of Amazon and DBLP
   [SK](https://law.di.unimi.it/webdata/sk-2005/) (LAW).
 
 
-# Maximum_Flexi_Clique_Search
