@@ -10,11 +10,11 @@ Given a graph *G* and a parameter τ ∈ (0, 1), a node set *H* is a **flexi-cli
 connected and every node of *H* has at least ⌊|*H*|^τ⌋ neighbours in *H*. The binary `flexi`
 computes a maximum flexi-clique with:
 
-| Algorithm | Description | Paper |
+| Algorithm | Description | 
 |---|---|---|
-| `eba` | **EBA** (Exact Branch-and-bound Algorithm): exact search with connectivity-preserving branching (CP-Branching), Rules 1–3, and the margin pivot, starting from the FPA solution | Section V, Algorithm 2 |
-| `fpa` | **FPA** (Flexi-Prune Algorithm): scalable heuristic — global peeling, augmentation, and slack-aware peeling | Section IV, Algorithm 1 |
-| `npa` | **NPA**: the existing peeling heuristic for flexi-cliques (Kim et al., CIKM 2024), the baseline of FPA | Section VI |
+| `eba` | **EBA** (Exact Branch-and-bound Algorithm): exact search with connectivity-preserving branching (CP-Branching), Rules 1–3, and the margin pivot, starting from the FPA solution | 
+| `fpa` | **FPA** (Flexi-Prune Algorithm): scalable heuristic — global peeling, augmentation, and slack-aware peeling |  
+| `npa` | **NPA**: the existing peeling heuristic for flexi-cliques (Kim et al., CIKM 2024), the baseline of FPA | 
 
 ## Contents
 
