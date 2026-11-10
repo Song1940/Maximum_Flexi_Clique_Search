@@ -1,0 +1,17 @@
+build/
+results/
+# graphs/ keeps the nine smaller graphs; the others are downloaded there, the LFR graphs are generated
+graphs/*
+!graphs/FB.txt
+!graphs/GO.txt
+!graphs/FW.txt
+!graphs/CA.txt
+!graphs/CD.txt
+!graphs/RO.txt
+!graphs/LU.txt
+!graphs/DB.txt
+!graphs/AM.txt
+!graphs/prepare_datasets.py
+!graphs/convert_law.sh
+__pycache__/
+*.pyc

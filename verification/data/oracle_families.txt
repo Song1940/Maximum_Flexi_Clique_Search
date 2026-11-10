@@ -1,0 +1,11 @@
+# python3 verification/oracle_families.py --workers 8   (defaults: 500 graphs per family)
+family     graphs   runs   FPA optimal  mean FPA/OPT  EBA without branching
+er            500   2500         98.6%         99.6%                  97.6%
+planted       500   2500         99.2%         99.8%                  98.7%
+twoblocks     500   2500         97.5%         99.4%                  88.4%
+circulant     500   2500         94.4%         98.1%                  77.2%
+coreper       500   2500         99.6%         99.9%                  99.4%
+ball_FB       500   2500         99.0%         99.7%                  97.7%
+ball_CA       500   2500         99.4%         99.8%                  99.0%
+ball_DB       500   2500         97.2%         99.4%                  94.6%
+failed runs: 0

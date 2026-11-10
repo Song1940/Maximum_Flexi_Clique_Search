@@ -2,7 +2,7 @@
 #include "graph.h"
 #include <vector>
 
-// Global peeling of FPA (Peel in Algorithm 1).
+// Global peeling of FPA (global peeling of Section IV).
 // Within every connected component (restricted to active_mask if given), repeatedly
 // remove a minimum-degree node until the remaining set R satisfies the flexi-clique
 // degree threshold delta(G[R]) >= floor(|R|^tau). Every connected component of

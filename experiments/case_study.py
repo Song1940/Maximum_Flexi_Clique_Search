@@ -1,5 +1,49 @@
 #!/usr/bin/env python3
+"""Case study of the paper (Section VI, EQ7): recovery of ground-truth Amazon communities.
 
+  python3 experiments/case_study.py run                                  # Table tab:case (50 communities)
+  python3 experiments/case_study.py run --n 10 --timeout 60 --out /tmp/cs   # quick check
+  python3 experiments/case_study.py run --query 335413 --out results/case_irving   # EQ7 figure
+  python3 experiments/case_study.py summary [--out DIR] [--first N]       # rebuild summary.csv
+
+Input: the Amazon graph and its SNAP communities (`python3 graphs/prepare_datasets.py AM --communities AM`
+writes graphs/AM.txt and graphs/communities/AM.all.txt), and the binaries build/flexi and build/qcs.
+
+Communities. The distinct member sets of 12 to 50 nodes (--min-size, --max-size) are sorted, and --n of
+them are drawn with random.Random(2027).sample. The query q of a community C is its member with the most neighbours in C
+(ties: smallest id); C itself is used only to choose q and to score the answers. For each model, the
+answer is a maximum node set of the WHOLE graph that contains q:
+  flexi (tau): `flexi --algo eba --seed q` on the whole graph, with --init set to the maximum flexi-clique
+      containing q in the subgraph induced by the 2-hop neighbourhood of q (computed first, by the same
+      binary; it is also a flexi-clique of the whole graph). If the whole-graph run reaches the time
+      limit, this 2-hop answer is kept as the best-known answer (status TO).
+  clique, 3-plex, 0.5-quasi-clique (degree-based: at least ceil(0.5 (|K|-1)) neighbours in K; no
+      connectivity required): `qcs` on the 2-hop neighbourhood of q. This is exact for the whole graph:
+      two non-adjacent members of a quasi-clique with gamma >= 0.5, or of a 3-plex with >= 5 nodes, have a
+      common neighbour in it, so the set lies within 2 hops of q. A 3-plex answer with fewer than 4 nodes
+      is therefore not certified and is flagged (status ok<4). qcs is anytime: on a time-out it returns
+      its best set so far (status TO).
+Every answer is re-checked against its model on the whole graph.
+
+Outputs (--out, default results/case_study/):
+  raw.csv      one row per community and model: size, precision, recall, F1, Jaccard, time, status
+               (time: wall-clock seconds for flexi, including loading the graph; search time for qcs)
+  nodes.jsonl  the community, the query, the answer ("pred") and, for flexi, the 2-hop answer ("local")
+  summary.csv  means per model: Table tab:case and the average sizes and densities of the text
+               (density of a set K: 2 |E(K)| / (|K| (|K|-1)), averaged over the answers with >= 2 nodes)
+
+Time limit. --timeout applies to every solver run (paper: 3600 s, 36 runs in parallel; with it, 19 of
+the 50 whole-graph flexi runs and 1 quasi-clique run reach the limit). The solvers are deterministic,
+so a longer --timeout gives the same result as rerunning only the time-outs with that limit.
+--workers sets the number of runs in parallel (each run uses one solver process at a time). Rows are
+written as the runs finish; `run --resume` (with the same options) continues an interrupted run.
+
+EQ7 figure (the works of John Irving, q = 335413, "The 158-Pound Marriage"): `run --query 335413` runs every
+community of 12 to 50 nodes whose query is 335413: the 28-node community of the figure and a 33-node one.
+In this mode, cid is the index of the community in the sorted list of distinct communities.
+
+Python 3.8+, standard library only.
+"""
 import argparse, csv, json, math, os, random, subprocess, sys, threading, time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -48,16 +92,16 @@ def query_of(adj, members):
     return max(members, key=lambda v: (len(adj[v] & C), -v))
 
 
-def select_communities(adj, comms, n, query=None):
-    """[(cid, sorted members)]: the seeded sample of n distinct communities of 12..50 nodes (cid = position
-    in the sample), or, with query, every such community whose query node is query (cid = index in the
-    sorted list of distinct communities)."""
+def select_communities(adj, comms, n, query=None, min_size=MIN_SIZE, max_size=MAX_SIZE):
+    """[(cid, sorted members)]: the seeded sample of n distinct communities of min_size..max_size nodes
+    (cid = position in the sample), or, with query, every such community whose query node is query
+    (cid = index in the sorted list of distinct communities)."""
     pool = sorted({tuple(sorted(x for x in c if x in adj)) for c in comms})
-    pool = [c for c in pool if MIN_SIZE <= len(c) <= MAX_SIZE]
+    pool = [c for c in pool if min_size <= len(c) <= max_size]
     if query is not None:
         return [(i, c) for i, c in enumerate(pool) if query in c and query_of(adj, c) == query]
     if n > len(pool):
-        sys.exit(f"--n {n}: only {len(pool)} distinct communities of {MIN_SIZE}-{MAX_SIZE} nodes")
+        sys.exit(f"--n {n}: only {len(pool)} distinct communities of {min_size}-{max_size} nodes")
     return list(enumerate(random.Random(SAMPLE_SEED).sample(pool, n)))
 
 
@@ -253,7 +297,7 @@ def run(a):
                        (a.communities, "communities")):
         if not os.path.exists(path):
             sys.exit(f"{what} not found: {path} (build with cmake, see README.md; "
-                     f"python3 datasets/prepare_datasets.py AM --communities AM writes the graph and the communities)")
+                     f"python3 graphs/prepare_datasets.py AM --communities AM writes the graph and the communities)")
     taus = list(dict.fromkeys(a.tau))
     if any(not 0 < t < 1 or Fraction(str(t)).denominator > 100 for t in taus):
         sys.exit("--tau: give values in (0,1) with at most two decimals")
@@ -264,9 +308,9 @@ def run(a):
         sys.exit(f"{a.out} already has results; use --resume to continue them, or another --out")
 
     adj = load_graph(a.graph)
-    comms = select_communities(adj, load_communities(a.communities), a.n, a.query)
+    comms = select_communities(adj, load_communities(a.communities), a.n, a.query, a.min_size, a.max_size)
     if not comms:
-        sys.exit("no community selected" + (f": none of {MIN_SIZE}-{MAX_SIZE} nodes has query node {a.query}"
+        sys.exit("no community selected" + (f": none of {a.min_size}-{a.max_size} nodes has query node {a.query}"
                                             if a.query is not None else ""))
     print(f"{len(comms)} communities, graph with {len(adj)} nodes", flush=True)
     queries = []
@@ -352,12 +396,14 @@ def main():
     for p in (pr, ps):
         p.add_argument("--out", default=os.path.join(ROOT, "results", "case_study"),
                        help="output directory")
-        p.add_argument("--graph", default=os.path.join(ROOT, "datasets", "graphs", "AM.txt"), help="edge list")
-    pr.add_argument("--communities", default=os.path.join(ROOT, "datasets", "communities", "AM.all.txt"),
+        p.add_argument("--graph", default=os.path.join(ROOT, "graphs", "AM.txt"), help="edge list")
+    pr.add_argument("--communities", default=os.path.join(ROOT, "graphs", "communities", "AM.all.txt"),
                     help="ground-truth communities, one per line")
     pr.add_argument("--flexi", default=os.path.join(ROOT, "build", "flexi"), help="flexi binary")
     pr.add_argument("--qcs", default=os.path.join(ROOT, "build", "qcs"), help="qcs binary")
     pr.add_argument("--n", type=int, default=50, help="number of sampled communities")
+    pr.add_argument("--min-size", type=int, default=MIN_SIZE, help="smallest community size sampled (paper: 12)")
+    pr.add_argument("--max-size", type=int, default=MAX_SIZE, help="largest community size sampled (paper: 50)")
     pr.add_argument("--tau", type=float, nargs="+", default=[0.5], help="tau of the flexi-clique")
     pr.add_argument("--timeout", type=float, default=3600, help="time limit of each solver run (seconds)")
     pr.add_argument("--workers", type=int, default=4, help="runs in parallel")

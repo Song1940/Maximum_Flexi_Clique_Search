@@ -1,5 +1,37 @@
 #!/usr/bin/env python3
+"""Run the C++ experiments of Section VI and of the technical report; one row per run in results/results.csv.
 
+  python3 experiments/run_experiments.py --groups main                       # EQ1 (Table III)
+  python3 experiments/run_experiments.py --groups synthetic                  # EQ2 (Fig. 5)
+  python3 experiments/run_experiments.py --groups effectiveness              # EQ3 (Fig. 6)
+  python3 experiments/run_experiments.py --groups ablation                   # EQ4 (Fig. 7)
+  python3 experiments/run_experiments.py --groups branching                  # EQ5 (Fig. 8)
+  python3 experiments/run_experiments.py --groups width                      # technical report: branching width
+  python3 experiments/run_experiments.py --groups main --datasets FB,GO --taus 0.5 --timeout 600 --workers 4
+
+Groups (dataset abbreviations as in Table II; tau grids: EQ1 {0.5, 0.7, 0.9}, the figures of EQ3-EQ5
+0.50, 0.55, ..., 0.95, EQ2 0.90, 0.91, ..., 0.99):
+  main           EBA, FPA, NPA on the 13 real-world graphs (EQ1; also the FPA and NPA sizes of the
+                 technical report)
+  synthetic      EBA and the root statistics (nodes left after Rules 1 and 3 with the FPA incumbent) on
+                 the five LFR graphs of EQ2, generated as described in README.md into graphs/lfr/
+  effectiveness  EBA and FPA on FB, FW, CA, CD, RO, LU (EQ3)
+  ablation       EBA, EBA-Rule 1/2/3 and EBA-FPA on FB, FW, CA, CD, CS, WI (EQ4)
+  branching      EBA, EBA-Pivot, EBA-Degeneracy, Binary, flat Sym-SE and CP-SAT on FB, GO, FW, CA, LU,
+                 CS, SK (EQ5; the paper's figure shows the first six graphs)
+  width          the branching-width traces of EBA and EBA-Pivot on the instances of group branching
+                 where EBA branches (branches > 0); it reads those rows from the results file, so it
+                 runs in a separate invocation after group branching
+
+Protocol of the paper: one thread per run, a time limit of one day (--timeout) and a memory limit
+of 400 GB (--mem-gb, address-space limit via prlimit), and for runs under 60 s the median of three
+runs (CP-SAT and the width traces are run once, as in the paper). Each run is a separate process in its own session, measured with /usr/bin/time; its row
+records the solution size, the running time reported by the solver (graph loading excluded), the
+number of search nodes, the peak memory, and the status: ok, TO (time limit), MO (memory limit), or
+ERR:<reason>. The results file is appended to, so an interrupted run resumes with the same command
+(rows with status ok, TO, or MO are not repeated; failed rows are). --dry-run lists the runs.
+Needs Linux (prlimit, /usr/bin/time) and, for CP-SAT, the Python package ortools.
+"""
 import argparse, csv, fcntl, gzip, os, re, shutil, signal, statistics, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -7,11 +39,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIELDS = ["group", "dataset", "tau", "algo", "status", "size", "time", "times", "branches",
           "maxrss_kb", "extra", "timeout", "finished_at"]
 
-REAL = "PG AP CD CO DB AM FD SO OK LJ IT SK".split()          # Table II
-LAW = ["IT", "SK"]
-NONLAW = [d for d in REAL if d not in LAW]
-LFR = [f"lfr_n{n}" for n in (100, 1000, 10000, 100000, 1000000)] + [f"lfr_k{k}" for k in (5, 10, 15, 20, 25)]
-TAUS = [0.3, 0.4, 0.5, 0.6, 0.7]
+REAL = "FB GO FW CA CD RO LU DB AM CS WI LJ SK".split()                     # Table II
+LFR = [f"lfr_n{n}" for n in (20000, 40000, 60000, 80000, 100000)]            # EQ2, graphs/lfr/
+TAU_EQ1 = [0.5, 0.7, 0.9]
+TAU_FIG = [k / 100 for k in range(50, 100, 5)]
+TAU_LFR = [k / 100 for k in range(90, 100)]
 REPEAT_BELOW = 60.0
 
 # algo -> (binary relative to the build directory, --algo)
@@ -19,35 +51,22 @@ CPP = {
     "eba": ("flexi", "eba"), "fpa": ("flexi", "fpa"), "npa": ("flexi", "npa"),
     "eba_no_rule1": ("variants/flexi_no_rule1", "eba"), "eba_no_rule2": ("variants/flexi_no_rule2", "eba"),
     "eba_no_rule3": ("variants/flexi_no_rule3", "eba"), "eba_no_incumbent": ("variants/flexi_no_incumbent", "eba"),
-    "eba_no_rule12": ("variants/flexi_no_rule12", "eba"), "eba_no_rule13": ("variants/flexi_no_rule13", "eba"),
-    "eba_no_rule23": ("variants/flexi_no_rule23", "eba"),
-    "flat_symse": ("variants/flexi_flat_symse", "eba"),
-    "order_asc": ("variants/flexi_order_asc", "eba"), "order_desc": ("variants/flexi_order_desc", "eba"),
-    "order_random": ("variants/flexi_order_random", "eba"),
-    "fpa_no_global": ("variants/flexi_fpa_no_global", "fpa"), "fpa_no_slack": ("variants/flexi_fpa_no_slack", "fpa"),
-    "fpa_no_augment": ("variants/flexi_fpa_no_augment", "fpa"),
-    "fpa_global_only": ("variants/flexi_fpa_global_only", "fpa"),
+    "eba_no_pivot": ("variants/flexi_no_pivot", "eba"), "eba_no_degeneracy": ("variants/flexi_no_degeneracy", "eba"),
+    "binary": ("variants/flexi_binary", "eba"), "flat_symse": ("variants/flexi_flat_symse", "eba"),
     "root_stats": ("variants/flexi_root_stats", "eba"),
     "width": ("variants/flexi_width", "eba"), "width_no_pivot": ("variants/flexi_width_no_pivot", "eba"),
 }
 
-# group -> algorithms, datasets, taus, time limit (None: --timeout), and runs left out
+# group -> algorithms, datasets, taus (width: from the rows of group branching)
 GROUPS = {
-    "main": dict(algos=["eba", "fpa", "npa"], datasets=REAL, taus=TAUS),
-    "ablation": dict(algos=["eba_no_rule1", "eba_no_rule2", "eba_no_rule3"], datasets=NONLAW, taus=TAUS),
-    "no_incumbent": dict(algos=["eba_no_incumbent"], datasets=["PG", "AP", "CO", "FD", "LJ"], taus=TAUS),
-    "synergy": dict(algos=["eba_no_rule12", "eba_no_rule13", "eba_no_rule23"],
-                    datasets=["PG", "AP", "CD", "CO", "DB", "FD", "LJ"], taus=TAUS,
-                    timeout=3600),
-    "branching": dict(algos=["flat_symse", "cpsat"], datasets=NONLAW + ["SK"], taus=TAUS,
-                      skip=lambda d, t, a: a == "cpsat" and d in ("OK", "SO")),
-    "order": dict(algos=["order_asc", "order_desc", "order_random"], datasets=NONLAW, taus=TAUS),
-    "fpa_ablation": dict(algos=["fpa_no_global", "fpa_no_slack", "fpa_no_augment", "fpa_global_only"],
-                         datasets=NONLAW, taus=TAUS),
-    "root_stats": dict(algos=["root_stats"], datasets=REAL, taus=TAUS),
-    "width": dict(algos=["width", "width_no_pivot"], datasets=None, taus=None),   # from group main's EBA rows
-    "synthetic": dict(algos=["eba", "fpa"], datasets=LFR, taus=[0.5]),
-    "iterqc": dict(algos=["iterqc"], datasets=REAL, taus=[0.5, 0.7]),
+    "main": dict(algos=["eba", "fpa", "npa"], datasets=REAL, taus=TAU_EQ1),
+    "synthetic": dict(algos=["root_stats", "eba"], datasets=LFR, taus=TAU_LFR),
+    "effectiveness": dict(algos=["eba", "fpa"], datasets="FB FW CA CD RO LU".split(), taus=TAU_FIG),
+    "ablation": dict(algos=["eba", "eba_no_rule1", "eba_no_rule2", "eba_no_rule3", "eba_no_incumbent"],
+                     datasets="FB FW CA CD CS WI".split(), taus=TAU_FIG),
+    "branching": dict(algos=["eba", "eba_no_pivot", "eba_no_degeneracy", "binary", "flat_symse", "cpsat"],
+                      datasets="FB GO FW CA LU CS SK".split(), taus=TAU_FIG),
+    "width": dict(algos=["width", "width_no_pivot"], datasets=None, taus=None),
 }
 
 
@@ -110,12 +129,19 @@ def parse_solver(out):
 
 
 def solver_extra(algo, err):
+    """The 'extra' field: root statistics or the width histogram; None if the line is missing."""
     if algo == "root_stats":
         m = re.search(r"RootStats: F=(\d+) V1=(\d+) V13=(\d+) UB=(\d+)", err)
         return "F={};V1={};V13={};UB={}".format(*m.groups()) if m else None
     if algo in ("width", "width_no_pivot"):
         m = re.search(r"WidthHist:(.*)", err)
-        return "hist=" + ",".join(m.group(1).split()) if m else None
+        if not m:
+            return None
+        pairs = [tuple(map(int, x.split(":"))) for x in m.group(1).split()]   # width: count
+        internal = sum(c for _, c in pairs)                    # branching nodes (the root level excluded)
+        mean = sum(w * c for w, c in pairs) / internal if internal else 0.0
+        return (f"internal={internal};mean_w={mean:.6g};max_w={max((w for w, _ in pairs), default=0)};"
+                f"capped={sum(c for w, c in pairs if w >= 255)};hist=" + ",".join(f"{w}:{c}" for w, c in pairs))
     return ""
 
 
@@ -141,8 +167,8 @@ def run_cpp(algo, path, tau, a):
         elif kv["Size"] != first["size"]:
             return dict(status=f"ERR:repeat size {kv['Size']} != {first['size']}", maxrss_kb=rss)
         times.append(float(kv["Time(s)"]))
-        if times[0] >= REPEAT_BELOW or len(times) == 3:
-            break
+        if times[0] >= REPEAT_BELOW or len(times) == 3 or algo in ("width", "width_no_pivot"):
+            break                                  # the traces are not timed: one run
     extra = ";".join(x for x in (first.pop("extra"), f"repeat_failed={failed}" if failed else "") if x)
     return dict(first, status="ok", time=f"{statistics.median(times):.6g}",
                 times=";".join(f"{x:.6g}" for x in times), extra=extra)
@@ -163,34 +189,6 @@ def run_cpsat(path, tau, a):
     return dict(status="ok" if proved else "TO", size=kv["size"] if proved else "",
                 time=kv["algo"] if proved else "", times=kv["algo"] if proved else "", maxrss_kb=rss,
                 extra=f"cpsat_status={kv['status']};Vprime={kv.get('Vprime', '')}")
-
-
-def run_iterqc(d, gamma, a):
-    """IterQC on its converted input <iterqc-dir>/<d>.txt; output lines 'res: <size>' and
-    'Running Time: <t>s'."""
-    cmd = [a.iterqc, os.path.join(a.iterqc_dir, f"{d}.txt"), str(gamma)]
-    times, size, rss0, failed = [], None, "", ""
-    while True:
-        out, err, rss, st = run_once(cmd, a.timeout_of_run, a.mem_gb)
-        if st != "ok":
-            if size is None:
-                return dict(status=st, maxrss_kb=rss)
-            failed = st
-            break
-        s = re.search(r"^res:\s*(\d+)", out, re.M)
-        t = re.search(r"^Running Time:\s*([0-9.eE+-]+)s", out, re.M)
-        if not s or not t:
-            return dict(status="ERR:output", maxrss_kb=rss)
-        if size is None:
-            size, rss0 = s.group(1), rss
-        elif s.group(1) != size:
-            return dict(status=f"ERR:repeat size {s.group(1)} != {size}", maxrss_kb=rss)
-        times.append(float(t.group(1)))
-        if times[0] >= REPEAT_BELOW or len(times) == 3:
-            break
-    return dict(status="ok", size=size, time=f"{statistics.median(times):.6g}",
-                times=";".join(f"{x:.6g}" for x in times), maxrss_kb=rss0,
-                extra=f"repeat_failed={failed}" if failed else "")
 
 
 STAMP = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$")
@@ -227,19 +225,17 @@ def build_jobs(a, rows):
         spec = GROUPS[g]
         if g == "width":
             insts = sorted({(r["dataset"], float(r["tau"])) for r in rows
-                            if r["group"] in ("main", "synthetic") and r["algo"] == "eba" and r["status"] == "ok"
+                            if r["group"] == "branching" and r["algo"] == "eba" and r["status"] == "ok"
                             and r["branches"] and int(r["branches"]) > 0})
             if not insts:
-                print("group width: no EBA row of group main/synthetic with branches > 0 yet", flush=True)
+                print("group width: no EBA row of group branching with branches > 0 yet", flush=True)
         else:
             insts = [(d, t) for d in spec["datasets"] for t in spec["taus"]]
         for d, t in insts:
             for algo in spec["algos"]:
-                if spec.get("skip", lambda *x: False)(d, t, algo):
-                    continue
                 if (want_d and d not in want_d) or (want_t and t not in want_t) or (want_a and algo not in want_a):
                     continue
-                jobs.append((g, d, t, algo, spec.get("timeout")))
+                jobs.append((g, d, t, algo))
     return jobs
 
 
@@ -253,19 +249,17 @@ def main():
     ap.add_argument("--mem-gb", type=int, default=400, help="memory limit per run in GB (default: 400)")
     ap.add_argument("--workers", type=int, default=1, help="runs in parallel (default: 1)")
     ap.add_argument("--build", default=os.path.join(ROOT, "build"), help="CMake build directory")
-    ap.add_argument("--graphs", default=os.path.join(ROOT, "datasets", "graphs"), help="real-world edge lists")
-    ap.add_argument("--lfr", default=os.path.join(ROOT, "datasets", "lfr"), help="LFR graphs")
-    ap.add_argument("--iterqc", help="IterQC binary (group iterqc)")
-    ap.add_argument("--iterqc-dir", default=os.path.join(ROOT, "datasets", "iterqc"),
-                    help="inputs converted for IterQC (group iterqc)")
+    ap.add_argument("--graphs", default=os.path.join(ROOT, "graphs"), help="real-world edge lists")
+    ap.add_argument("--lfr", default=os.path.join(ROOT, "graphs", "lfr"), help="LFR graphs")
     ap.add_argument("--out", default=os.path.join(ROOT, "results", "results.csv"))
     ap.add_argument("--dry-run", action="store_true", help="list the runs without starting them")
     a = ap.parse_args()
     unknown = [g for g in a.groups.split(",") if g not in GROUPS]
     if unknown:
         ap.error(f"unknown groups: {unknown}")
-    if "iterqc" in a.groups.split(",") and not a.iterqc and not a.dry_run:
-        ap.error("group iterqc needs --iterqc")
+    if "width" in a.groups.split(",") and "branching" in a.groups.split(","):
+        ap.error("group width takes its instances from the rows of group branching: run it in a separate "
+                 "invocation after group branching")
     if not shutil.which("prlimit") or not os.path.exists("/usr/bin/time"):
         sys.exit("needs prlimit (util-linux) and /usr/bin/time")
 
@@ -278,11 +272,11 @@ def main():
         sys.exit(f"another run_experiments.py is writing {out}")
     rows = read_rows(out)
     done = {(r["group"], r["dataset"], float(r["tau"]), r["algo"]) for r in rows if r["status"] in ("ok", "TO", "MO")}
-    jobs = [j for j in build_jobs(a, rows) if j[:4] not in done]
+    jobs = [j for j in build_jobs(a, rows) if j not in done]
     print(f"{len(jobs)} runs to do ({len(done)} done in {out})", flush=True)
     if a.dry_run:
         for j in jobs:
-            print(*j[:4])
+            print(*j)
         return
 
     for d in sorted({j[1] for j in jobs if j[1].startswith("lfr_")}):
@@ -293,20 +287,18 @@ def main():
     if new:
         w.writeheader(); fout.flush()
     lock = threading.Lock()
+    a.timeout_of_run = a.timeout
 
     def work(job):
-        g, d, t, algo, limit = job
-        ja = argparse.Namespace(**vars(a), timeout_of_run=min(limit, a.timeout) if limit else a.timeout)
-        path = graph_file(d, a.graphs, a.lfr) if algo != "iterqc" else None
-        if path and not os.path.exists(path):
+        g, d, t, algo = job
+        path = graph_file(d, a.graphs, a.lfr)
+        if not os.path.exists(path):
             res = dict(status="ERR:no graph file")
         elif algo == "cpsat":
-            res = run_cpsat(path, t, ja)
-        elif algo == "iterqc":
-            res = run_iterqc(d, t, ja)
+            res = run_cpsat(path, t, a)
         else:
-            res = run_cpp(algo, path, t, ja)
-        row = dict(group=g, dataset=d, tau=t, algo=algo, timeout=ja.timeout_of_run,
+            res = run_cpp(algo, path, t, a)
+        row = dict(group=g, dataset=d, tau=t, algo=algo, timeout=a.timeout,
                    finished_at=time.strftime("%Y-%m-%d %H:%M:%S"), **res)
         with lock:
             w.writerow(row); fout.flush()

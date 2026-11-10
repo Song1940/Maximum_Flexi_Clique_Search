@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
+"""EQ6 of the paper (empirical calibration of tau): minimum degrees of ground-truth communities and
+of randomly grown connected node sets of the same size.
 
+  python3 experiments/tau_calibration.py [AM DB] [--graphs DIR] [--communities DIR] [--out DIR]
+      -> results/tau_calibration/records_<ABBR>.csv   (then: python3 analysis/fig_tau_calibration.py)
+
+Input: graphs/<ABBR>.txt and the SNAP top-5000 communities graphs/communities/<ABBR>.top5000.txt
+(`python3 graphs/prepare_datasets.py AM DB --communities AM DB`).
+
+Every listed community is restricted to its nodes in the graph and evaluated if it has at least 3
+nodes and induces a connected subgraph; a node set listed several times is evaluated each time (the
+Amazon file lists 5,000 communities but only 1,517 distinct node sets). For a community C, let q be its
+member with the most neighbours in C (ties: smallest id). A random set starts from {q} and repeatedly
+adds a node drawn uniformly from the nodes of the graph adjacent to the current set, until it has |C|
+nodes; it is connected by construction. --seeds random sets are drawn per community, with one
+random.Random(2027) per graph, communities in file order (as in the paper).
+
+A connected node set of size s whose induced subgraph has minimum degree d is a flexi-clique at tau
+iff d >= floor(s^tau), so the script writes, per evaluated community, one row
+  size, dmin_community, dmin_random0, ..., dmin_random<seeds-1>
+from which analysis/fig_tau_calibration.py computes the fractions of flexi-cliques for every tau.
+Python 3.8+, standard library only.
+"""
 import argparse, csv, os, random, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,8 +93,8 @@ def random_set(adj, q, size, rng):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("networks", nargs="*", default=["AM", "DB"], help="graph abbreviations (default: AM DB)")
-    ap.add_argument("--graphs", default=os.path.join(ROOT, "datasets", "graphs"), help="directory of <ABBR>.txt")
-    ap.add_argument("--communities", default=os.path.join(ROOT, "datasets", "communities"),
+    ap.add_argument("--graphs", default=os.path.join(ROOT, "graphs"), help="directory of <ABBR>.txt")
+    ap.add_argument("--communities", default=os.path.join(ROOT, "graphs", "communities"),
                     help="directory of <ABBR>.top5000.txt")
     ap.add_argument("--out", default=os.path.join(ROOT, "results", "tau_calibration"), help="output directory")
     ap.add_argument("--seeds", type=int, default=5, help="random sets per community (paper: 5)")
@@ -83,7 +105,7 @@ def main():
     for net in nets:
         for p in (os.path.join(a.graphs, net + ".txt"), os.path.join(a.communities, net + ".top5000.txt")):
             if not os.path.exists(p):
-                sys.exit(f"{p} not found (python3 datasets/prepare_datasets.py {net} --communities {net})")
+                sys.exit(f"{p} not found (python3 graphs/prepare_datasets.py {net} --communities {net})")
     os.makedirs(a.out, exist_ok=True)
 
     for net in nets:
