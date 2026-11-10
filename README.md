@@ -187,21 +187,6 @@ The other baselines are `baselines/cpsat/cpsat_baseline.py` (CP-SAT on a constra
 model, with the FPA incumbent and the global pruning of EBA; EQ5) and `build/qcs` (maximum clique,
 *k*-plex, and γ-quasi-clique containing a query node; EQ7).
 
-## Validation
-
-`tests/validate_bruteforce.py` compares the binary with exhaustive enumeration on random small graphs:
-EBA must return a valid flexi-clique of maximum size (also with `--seed`), and FPA a valid flexi-clique
-no larger than the maximum.
-
-```bash
-python3 tests/validate_bruteforce.py build/flexi 1000 14    # 1,000 random graphs with up to 14 nodes
-```
-
-`verification/` checks the optimality results of EQ1 without the code of EBA. If every connected
-component of the $\lambda$-core, with $\lambda=\lfloor(f+1)^\tau\rfloor$, has at most $f$ nodes, no
-flexi-clique is larger than the FPA solution of size $f$; this is also exactly the condition under
-which EBA finishes without branching. The directory also compares FPA and EBA with exhaustive
-enumeration on eight families of small graphs ([`verification/README.md`](verification/README.md)).
 
 ## Source layout
 
