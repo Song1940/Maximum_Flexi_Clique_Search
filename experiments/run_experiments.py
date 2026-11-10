@@ -1,37 +1,5 @@
 #!/usr/bin/env python3
-"""Run the C++ experiments of Section VI and of the technical report; one row per run in results/results.csv.
 
-  python3 experiments/run_experiments.py --groups main                       # EQ1 (Table III)
-  python3 experiments/run_experiments.py --groups synthetic                  # EQ2 (Fig. 5)
-  python3 experiments/run_experiments.py --groups effectiveness              # EQ3 (Fig. 6)
-  python3 experiments/run_experiments.py --groups ablation                   # EQ4 (Fig. 7)
-  python3 experiments/run_experiments.py --groups branching                  # EQ5 (Fig. 8)
-  python3 experiments/run_experiments.py --groups width                      # technical report: branching width
-  python3 experiments/run_experiments.py --groups main --datasets FB,GO --taus 0.5 --timeout 600 --workers 4
-
-Groups (dataset abbreviations as in Table II; tau grids: EQ1 {0.5, 0.7, 0.9}, the figures of EQ3-EQ5
-0.50, 0.55, ..., 0.95, EQ2 0.90, 0.91, ..., 0.99):
-  main           EBA, FPA, NPA on the 13 real-world graphs (EQ1; also the FPA and NPA sizes of the
-                 technical report)
-  synthetic      EBA and the root statistics (nodes left after Rules 1 and 3 with the FPA incumbent) on
-                 the five LFR graphs of EQ2, generated as described in README.md into graphs/lfr/
-  effectiveness  EBA and FPA on FB, FW, CA, CD, RO, LU (EQ3)
-  ablation       EBA, EBA-Rule 1/2/3 and EBA-FPA on FB, FW, CA, CD, CS, WI (EQ4)
-  branching      EBA, EBA-Pivot, EBA-Degeneracy, Binary, flat Sym-SE and CP-SAT on FB, GO, FW, CA, LU,
-                 CS, SK (EQ5; the paper's figure shows the first six graphs)
-  width          the branching-width traces of EBA and EBA-Pivot on the instances of group branching
-                 where EBA branches (branches > 0); it reads those rows from the results file, so it
-                 runs in a separate invocation after group branching
-
-Protocol of the paper: one thread per run, a time limit of one day (--timeout) and a memory limit
-of 400 GB (--mem-gb, address-space limit via prlimit), and for runs under 60 s the median of three
-runs (CP-SAT and the width traces are run once, as in the paper). Each run is a separate process in its own session, measured with /usr/bin/time; its row
-records the solution size, the running time reported by the solver (graph loading excluded), the
-number of search nodes, the peak memory, and the status: ok, TO (time limit), MO (memory limit), or
-ERR:<reason>. The results file is appended to, so an interrupted run resumes with the same command
-(rows with status ok, TO, or MO are not repeated; failed rows are). --dry-run lists the runs.
-Needs Linux (prlimit, /usr/bin/time) and, for CP-SAT, the Python package ortools.
-"""
 import argparse, csv, fcntl, gzip, os, re, shutil, signal, statistics, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
