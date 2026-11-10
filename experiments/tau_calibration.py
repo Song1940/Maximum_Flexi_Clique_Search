@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""EQ6 of the paper (empirical calibration of tau): minimum degrees of ground-truth communities and
-of randomly grown connected node sets of the same size.
 
-  python3 experiments/tau_calibration.py [AM DB] [--graphs DIR] [--communities DIR] [--out DIR]
-      -> results/tau_calibration/records_<ABBR>.csv   (then: python3 analysis/fig_tau_calibration.py)
-
-Input: graphs/<ABBR>.txt and the SNAP top-5000 communities graphs/communities/<ABBR>.top5000.txt
-(`python3 graphs/prepare_datasets.py AM DB --communities AM DB`).
-
-Every listed community is restricted to its nodes in the graph and evaluated if it has at least 3
-nodes and induces a connected subgraph; a node set listed several times is evaluated each time (the
-Amazon file lists 5,000 communities but only 1,517 distinct node sets). For a community C, let q be its
-member with the most neighbours in C (ties: smallest id). A random set starts from {q} and repeatedly
-adds a node drawn uniformly from the nodes of the graph adjacent to the current set, until it has |C|
-nodes; it is connected by construction. --seeds random sets are drawn per community, with one
-random.Random(2027) per graph, communities in file order (as in the paper).
-
-A connected node set of size s whose induced subgraph has minimum degree d is a flexi-clique at tau
-iff d >= floor(s^tau), so the script writes, per evaluated community, one row
-  size, dmin_community, dmin_random0, ..., dmin_random<seeds-1>
-from which analysis/fig_tau_calibration.py computes the fractions of flexi-cliques for every tau.
-Python 3.8+, standard library only.
-"""
 import argparse, csv, os, random, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
