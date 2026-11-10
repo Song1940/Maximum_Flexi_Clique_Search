@@ -214,26 +214,4 @@ enumeration on eight families of small graphs ([`verification/README.md`](verifi
 | `src/graph.h`, `src/graph.cpp` | graph container, threshold ⌊k^τ⌋, size bound (Lemma 1), loader, validity check |
 | `src/main.cpp` | command-line driver |
 
-## License
 
-The code is released under the MIT License ([`LICENSE`](LICENSE)). The datasets are subject to the
-terms of their original sources.
-
-## Citation
-
-If you use this code, please cite the paper and, for the proofs, the technical report:
-
-```bibtex
-@misc{kim26flexi,
-  title  = {Exact Maximum Flexi-Clique Computation under Non-Hereditary Property and Connectivity},
-  author = {Kim, Song and Yu, Kaiqiang and Han, Taejoon and Kim, Hyewon and Kim, Junghoon and Yoon, Susik and Kim, Jungeun},
-  year   = {2026},
-  note   = {Submitted to IEEE ICDE 2027}
-}
-@misc{kim26full,
-  title  = {Technical Report: Connectivity-Preserving Exact Search for Non-Hereditary Cohesive Subgraphs: Computing Maximum Flexi-Cliques},
-  author = {Kim, Song and Yu, Kaiqiang and Han, Taejoon and Kim, Hyewon and Kim, Junghoon and Yoon, Susik and Kim, Jungeun},
-  year   = {2026},
-  howpublished = {\url{https://github.com/Song1940/Maximum_Flexi_Clique_Search/blob/main/technical_report.pdf}}
-}
-```
