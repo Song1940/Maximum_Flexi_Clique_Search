@@ -121,7 +121,7 @@ experiments (the order of the edges decides ties in the search).
 The five LFR graphs of EQ2 (20,000, 40,000, 60,000, 80,000, and 100,000 nodes) were generated with
 the LFR benchmark for undirected, unweighted networks (Lancichinetti, Fortunato, and Radicchi, 2008)
 with average degree 40, maximum degree 200, mixing parameter 0.4, community sizes 20 to 1,000, and
-no overlapping nodes, with seed 2004 for 20,000 nodes and seed 2001 otherwise:
+no overlapping nodes.
 
 ```bash
 echo <seed> > time_seed.dat
