@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Size and density of the SNAP ground-truth communities (input of analysis/fig_motivation.py, Fig. 1).
 
-  python3 experiments/community_stats.py [AM DB] [--graphs DIR] [--communities DIR] [--out DIR]
-      -> results/community_stats/<ABBR>.all.csv, <ABBR>.top5000.csv
-
-Input: graphs/<ABBR>.txt and graphs/communities/<ABBR>.{all,top5000}.txt
-(`python3 graphs/prepare_datasets.py AM DB --communities AM DB`).
-
-Each community is restricted to its nodes in the graph (for these files, every listed node is in the
-graph). Per community: size s, number e of edges of the graph inside it, and density 2e / (s (s - 1)).
-  <ABBR>.all.csv      every listed community of <ABBR>.all.txt, in file order (DBLP lists 13,477
-                      communities but only 13,423 distinct node sets; repeats count, as in the paper);
-  <ABBR>.top5000.csv  the distinct node sets of <ABBR>.top5000.txt with at least 3 nodes, in order of
-                      first listing (Amazon lists 5,000 communities but only 1,517 distinct node sets).
-Column community: line of the community in the community file (0-based; first listing).
-Python 3.8+, standard library only.
-"""
 import argparse, csv, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
