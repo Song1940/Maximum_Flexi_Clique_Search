@@ -1,49 +1,5 @@
 #!/usr/bin/env python3
-"""Case study of the paper (Section VI, EQ7): recovery of ground-truth Amazon communities.
 
-  python3 experiments/case_study.py run                                  # Table tab:case (50 communities)
-  python3 experiments/case_study.py run --n 10 --timeout 60 --out /tmp/cs   # quick check
-  python3 experiments/case_study.py run --query 335413 --out results/case_irving   # EQ7 figure
-  python3 experiments/case_study.py summary [--out DIR] [--first N]       # rebuild summary.csv
-
-Input: the Amazon graph and its SNAP communities (`python3 graphs/prepare_datasets.py AM --communities AM`
-writes graphs/AM.txt and graphs/communities/AM.all.txt), and the binaries build/flexi and build/qcs.
-
-Communities. The distinct member sets of 12 to 50 nodes (--min-size, --max-size) are sorted, and --n of
-them are drawn with random.Random(2027).sample. The query q of a community C is its member with the most neighbours in C
-(ties: smallest id); C itself is used only to choose q and to score the answers. For each model, the
-answer is a maximum node set of the WHOLE graph that contains q:
-  flexi (tau): `flexi --algo eba --seed q` on the whole graph, with --init set to the maximum flexi-clique
-      containing q in the subgraph induced by the 2-hop neighbourhood of q (computed first, by the same
-      binary; it is also a flexi-clique of the whole graph). If the whole-graph run reaches the time
-      limit, this 2-hop answer is kept as the best-known answer (status TO).
-  clique, 3-plex, 0.5-quasi-clique (degree-based: at least ceil(0.5 (|K|-1)) neighbours in K; no
-      connectivity required): `qcs` on the 2-hop neighbourhood of q. This is exact for the whole graph:
-      two non-adjacent members of a quasi-clique with gamma >= 0.5, or of a 3-plex with >= 5 nodes, have a
-      common neighbour in it, so the set lies within 2 hops of q. A 3-plex answer with fewer than 4 nodes
-      is therefore not certified and is flagged (status ok<4). qcs is anytime: on a time-out it returns
-      its best set so far (status TO).
-Every answer is re-checked against its model on the whole graph.
-
-Outputs (--out, default results/case_study/):
-  raw.csv      one row per community and model: size, precision, recall, F1, Jaccard, time, status
-               (time: wall-clock seconds for flexi, including loading the graph; search time for qcs)
-  nodes.jsonl  the community, the query, the answer ("pred") and, for flexi, the 2-hop answer ("local")
-  summary.csv  means per model: Table tab:case and the average sizes and densities of the text
-               (density of a set K: 2 |E(K)| / (|K| (|K|-1)), averaged over the answers with >= 2 nodes)
-
-Time limit. --timeout applies to every solver run (paper: 3600 s, 36 runs in parallel; with it, 19 of
-the 50 whole-graph flexi runs and 1 quasi-clique run reach the limit). The solvers are deterministic,
-so a longer --timeout gives the same result as rerunning only the time-outs with that limit.
---workers sets the number of runs in parallel (each run uses one solver process at a time). Rows are
-written as the runs finish; `run --resume` (with the same options) continues an interrupted run.
-
-EQ7 figure (the works of John Irving, q = 335413, "The 158-Pound Marriage"): `run --query 335413` runs every
-community of 12 to 50 nodes whose query is 335413: the 28-node community of the figure and a 33-node one.
-In this mode, cid is the index of the community in the sorted list of distinct communities.
-
-Python 3.8+, standard library only.
-"""
 import argparse, csv, json, math, os, random, subprocess, sys, threading, time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
