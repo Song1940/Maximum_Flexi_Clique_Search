@@ -11,7 +11,7 @@ connected and every node of *H* has at least ⌊|*H*|^τ⌋ neighbours in *H*. T
 computes a maximum flexi-clique with:
 
 | Algorithm | Description | 
-|---|---|---|
+|---|---|
 | `eba` | **EBA** (Exact Branch-and-bound Algorithm): exact search with connectivity-preserving branching (CP-Branching), Rules 1–3, and the margin pivot, starting from the FPA solution | 
 | `fpa` | **FPA** (Flexi-Prune Algorithm): scalable heuristic — global peeling, augmentation, and slack-aware peeling |  
 | `npa` | **NPA**: the existing peeling heuristic for flexi-cliques (Kim et al., CIKM 2024), the baseline of FPA | 
